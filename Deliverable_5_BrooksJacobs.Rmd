@@ -1,0 +1,504 @@
+---
+title: "Atmospheric Measurements Over Different Altitudes"
+author: "Brooks Jacobs"
+output: html_document
+---
+
+# Libraries
+
+```{r}
+
+library(ggplot2) # Used to create charts and visualizations
+
+```
+
+# Summary
+
+This project examines atmospheric measurements collected during NASA's 2010 GRIP mission using a dropsonde, with the whole dataset having 2,310 observations and 17 original variables including atmospheric pressure, temperature, wind speed, and altitude. The goal was to understand how these measurements change at different altitudes and identify where the strongest winds occur.
+
+I used R to clean the dataset, calculate summary statistics, and create graphs to compare the measurements. The results show that atmospheric pressure and temperature decrease as altitude increases while wind speed changes more throughout the descent with the middle altitude group had the strongest average winds at approximately 20.5 m/s. Although the dataset contains a lot of missing values the analysis still shows clear patterns between altitude and the atmospheric measurements.
+
+# Purpose
+
+This project uses atmospheric measurements collected by NASA during the 2010 GRIP mission. The purpose is to examine how atmospheric pressure, temperature, and wind speed change at different altitudes. By analyzing these measurements, I want to better understand the relationships between these atmospheric variables.
+
+The main questions I would like to answer are:
+
+How does atmospheric pressure change as altitude increases?
+How does temperature change at different altitudes?
+How does wind speed vary across different altitude groups and where are the strongest winds found?
+
+# Data
+
+```{r}
+
+# dataset
+data <- read.table(
+  "D20100922_212614_P.QC.eol",
+  skip = 14,
+  header = FALSE,
+  na.strings = c("-999", "-999.00", "-999.00000")
+)
+
+colnames(data) <- c(
+  "Time", "Hour", "Minute", "Second",
+  "Pressure", "Temperature", "Dewpoint", "RH",
+  "Uwind", "Vwind", "Wspd", "Direction",
+  "dZ", "GeoPoAlt", "Longitude", "Latitude", "GPSAlt"
+)
+
+
+# Replace remaining missing-value placeholders with NA
+data[data == -999] <- NA
+
+data$Longitude[data$Longitude <= -900] <- NA
+data$Latitude[data$Latitude <= -900] <- NA
+
+# Alt groups
+data$AltitudeGroup <- cut(
+  data$GeoPoAlt,
+  breaks = c(-Inf, 4000, 8000, Inf),
+  labels = c("Low", "Middle", "High")
+)
+
+dim(data)
+head(data)
+
+```
+
+## Dataset Dimensions
+
+The dataset contains atmospheric measurements collected during NASA's 2010 GRIP mission. Each row represents an observation recorded by the dropsonde, while the columns represent different atmospheric measurements and related information.
+
+The dataset contains `r nrow(data)` observations and `r ncol(data)` variables, now including one altitude group variable created for this analysis.
+
+## Data Dictionary
+```{r}
+
+# Dictionary
+dictionary <- data.frame(
+  Variable = names(data),
+  Description = c(
+    "Time since dropsonde release",
+    "Hour of measurement",
+    "Minute of measurement",
+    "Second of measurement",
+    "Atmospheric pressure (mb)",
+    "Air temperature (C)",
+    "Dewpoint temperature (C)",
+    "Relative humidity (%)",
+    "East-west wind component (m/s)",
+    "North-south wind component (m/s)",
+    "Wind speed (m/s)",
+    "Wind direction (degrees)",
+    "Vertical velocity (m/s)",
+    "Geopotential altitude (m)",
+    "Longitude (degrees)",
+    "Latitude (degrees)",
+    "GPS altitude (m)",
+    "Altitude group: Low (0–4,000 m), Middle (4,000–8,000 m), High (above 8,000 m)"
+  ),
+
+  # Numerical or categorical classification
+  Type = c(rep("Numerical", 17), "Categorical"),
+
+  # Actual data types used in R
+  R_Data_Type = sapply(data, function(x) class(x)[1]),
+
+  # Units for each variable
+  Units = c(
+    "seconds", "hours", "minutes", "seconds",
+    "mb", "C", "C", "%",
+    "m/s", "m/s", "m/s", "degrees",
+    "m/s", "m", "degrees", "degrees",
+    "m", "None"
+  )
+)
+
+# Display dictionary
+knitr::kable(dictionary, row.names = FALSE)
+
+```
+
+## Data Cleanliness
+
+The dataset contains several missing measurements. Some variables, such as time, hour, minute, and second, have no missing values. However, pressure, temperature, and geopotential altitude each have 1,205 missing observations (52.2%). Longitude, latitude, and GPS altitude each have 1,368 missing observations (59.2%), while wind speed has 328 missing values (14.2%).
+
+```{r}
+
+missing_values <- data.frame(
+  Variable = names(data),
+  Missing = colSums(is.na(data)),
+  Percent = round(colMeans(is.na(data)) * 100, 1)
+)
+
+knitr::kable(missing_values, row.names = FALSE)
+
+```
+
+Some missing measurements were originally represented by -999 instead of NA. I replaced these values with NA so that R could recognize them as missing data. I also checked longitude and latitude for invalid values and replaced those with NA.
+
+Rather than removing entire rows with missing values, I kept the available measurements because some rows still contained useful data. Missing values are excluded when necessary for calculations and graphs.
+
+## Data Organization
+
+The dataset was already organized with each row representing a measurement and each column representing a different variable, so no big reshaping was needed. I assigned the names to the original columms and created a new variable AltitudeGroup to separate measurements into low, middle, and high altitudes. This makes it easier to compare wind speeds between different altitude ranges.
+
+# Exploratory Data Analysis
+
+## Summary Statistics
+
+```{r}
+
+summary_data <- data.frame(
+  Variable = c("Pressure", "Temperature", "Wspd", "GeoPoAlt"),
+  Mean = c(
+    mean(data$Pressure, na.rm = TRUE),
+    mean(data$Temperature, na.rm = TRUE),
+    mean(data$Wspd, na.rm = TRUE),
+    mean(data$GeoPoAlt, na.rm = TRUE)
+  ),
+  Minimum = c(
+    min(data$Pressure, na.rm = TRUE),
+    min(data$Temperature, na.rm = TRUE),
+    min(data$Wspd, na.rm = TRUE),
+    min(data$GeoPoAlt, na.rm = TRUE)
+  ),
+  Maximum = c(
+    max(data$Pressure, na.rm = TRUE),
+    max(data$Temperature, na.rm = TRUE),
+    max(data$Wspd, na.rm = TRUE),
+    max(data$GeoPoAlt, na.rm = TRUE)
+  )
+)
+
+summary_data[, 2:4] <- round(summary_data[, 2:4], 2)
+
+knitr::kable(summary_data, row.names = FALSE)
+
+```
+
+The summary statistics show that atmospheric pressure ranges from 206.64 mb to 1008.20 mb, with an average of 558.95 mb. Temperature ranges from -50.20°C to 27.25°C, showing a large difference between the coldest and warmest measurements. Wind speed has an average of 13.35 m/s, with values ranging from 7.77 to 24.89 m/s. The altitude measurements range from 0 to 12,245.50 meters, showing that the dropsonde collected data across a large range of altitudes.
+
+## Altitude Group Frequencies
+
+```{r}
+
+# Count observation in alt
+altitude_counts <- table(data$AltitudeGroup)
+
+# Frequency table
+knitr::kable(
+  as.data.frame(altitude_counts),
+  col.names = c("Altitude Group", "Frequency"),
+  row.names = FALSE
+)
+
+```
+
+The frequency table shows that the low altitude group has the most measurements with 425, followed by the high altitude group with 392 and the middle altitude group with 288. This shows that the measurements are not evenly distributed across the three altitude groups, with fewer observations collected in the middle group.
+
+### Atmospheric Pressure Distribution
+
+```{r}
+
+ggplot(data, aes(x = Pressure)) +
+  geom_histogram(
+    binwidth = 50,       # Each bar represents 50 mb
+    fill = "lightblue",  # Bar color
+    color = "white",     # Border color
+    na.rm = TRUE         # Ignore missing values
+  ) +
+  labs(
+    title = "Distribution of Atmospheric Pressure",
+    x = "Atmospheric Pressure (mb)",
+    y = "Frequency"
+  ) +
+  theme_minimal()
+
+```
+
+Most pressure measurements are between 200–500 mb and 800–1,000 mb, with fewer measurements in the middle. The scatter plot comparing pressure and altitude shows that pressure decreases as altitude increases, which helps explain the different pressure values recorded during the descent.
+
+### Temperature Distribution
+
+```{r}
+
+ggplot(data, aes(x = Temperature)) +
+  geom_histogram(
+    binwidth = 5,        # Each bar represents 5°C
+    fill = "lightblue",  # Bar color
+    color = "white",     # Border color
+    na.rm = TRUE         # Ignore missing values
+  ) +
+  labs(
+    title = "Distribution of Temperature",
+    x = "Temperature (°C)",
+    y = "Frequency"
+  ) +
+  theme_minimal()        # Simple graph appearance
+
+```
+
+Temperatures range from -50°C to 27°C, with many measurements between 15°C and 25°C. The scatter plot shows that temperature decreases as altitude increases, with the warmest temperatures recorded near the surface and the coldest at higher altitudes.
+
+### Wind Speed Distribution
+
+```{r}
+
+ggplot(data, aes(x = Wspd)) +
+  geom_histogram(
+    binwidth = 1,        # Each bar represents 1 m/s
+    fill = "lightblue",  # Bar color
+    color = "white",     # Border color
+    na.rm = TRUE         # Ignore missing values
+  ) +
+  labs(
+    title = "Distribution of Wind Speed",
+    x = "Wind Speed (m/s)",
+    y = "Frequency"
+  ) +
+  theme_minimal()        # Simple graph appearance
+
+```
+
+Most wind speeds are between 8 and 15 m/s, while speeds above 18 m/s occur less frequently. This suggests that lower wind speeds were more common during the descent. The scatter plot shows that stronger winds were found around 6,500 meters, while lower wind speeds were more common at lower altitudes.
+
+### Altitude Distribution
+
+```{r}
+
+ggplot(data, aes(x = GeoPoAlt)) +
+  geom_histogram(
+    binwidth = 500,      # Each bar represents 500 meters
+    fill = "lightblue",  # Bar color
+    color = "white",     # Border color
+    na.rm = TRUE         # Ignore missing values
+  ) +
+  labs(
+    title = "Distribution of Altitude",
+    x = "Geopotential Altitude (m)",
+    y = "Frequency"
+  ) +
+  theme_minimal()        # Simple graph appearance
+
+```
+
+Most altitude measurements are concentrated between 0 and 2,000 meters and between 6,000 and 12,000 meters. There are fewer measurements at some middle altitudes, which may be related to missing data. The frequency table also shows that the low altitude group has the most observations, followed by the high and middle groups.
+
+---
+
+## Relationships Between Variables
+
+```{r}
+
+ggplot(data, aes(x = GeoPoAlt, y = Pressure)) +
+  geom_point(
+    color = "green",  # Point color
+    size = 1.5,       # Point size
+    na.rm = TRUE      # Ignore missing values
+  ) +
+  labs(
+    title = "Atmospheric Pressure vs. Altitude",
+    x = "Geopotential Altitude (m)",
+    y = "Atmospheric Pressure (mb)"
+  ) +
+  theme_minimal()     # Simple graph appearance
+
+```
+
+Atmospheric pressure decreases as altitude increases, dropping from about 1,000 mb near the surface to 200 mb at higher altitudes. The relationship is curved rather than linear, showing that pressure does not decrease at the same rate throughout the descent.
+
+### Temperature vs. Altitude
+
+```{r}
+
+ggplot(data, aes(x = GeoPoAlt, y = Temperature)) +
+  geom_point(
+    color = "green",  # Point color
+    size = 1.5,       # Point size
+    na.rm = TRUE      # Ignore missing values
+  ) +
+  labs(
+    title = "Temperature vs. Altitude",
+    x = "Geopotential Altitude (m)",
+    y = "Temperature (°C)"
+  ) +
+  theme_minimal()     # Simple graph appearance
+
+```
+
+Temperature decreases as altitude increases, from about 27°C near the surface to -50°C at higher altitudes. The scatter plot shows a clear downward pattern, with temperatures becoming colder as altitude increases.
+
+### Wind Speed vs. Altitude
+
+```{r}
+
+ggplot(data, aes(x = GeoPoAlt, y = Wspd)) +
+  geom_point(
+    color = "green",  # Point color
+    size = 1.5,       # Point size
+    na.rm = TRUE      # Ignore missing values
+  ) +
+  labs(
+    title = "Wind Speed vs. Altitude",
+    x = "Geopotential Altitude (m)",
+    y = "Wind Speed (m/s)"
+  ) +
+  theme_minimal()     # Simple graph appearance
+
+```
+
+Wind speed changes at different altitudes, reaching nearly 25 m/s around 6,500 meters. Unlike temperature and pressure, wind speed does not follow a consistent increase or decrease. The strongest winds were found at middle altitudes, while lower wind speeds were more common closer to the surface.
+
+### Average Wind Speed by Altitude Group
+
+```{r}
+
+# Avg wind speed calculation
+avg_wind <- aggregate(
+  Wspd ~ AltitudeGroup,
+  data = data,
+  FUN = mean
+)
+
+# Bar chart using previous
+ggplot(avg_wind, aes(x = AltitudeGroup, y = Wspd)) +
+  geom_col(
+    fill = "lightblue", # Bar color
+    width = 0.6         # Bar width
+  ) +
+  labs(
+    title = "Average Wind Speed by Altitude Group",
+    x = "Altitude Group",
+    y = "Average Wind Speed (m/s)"
+  ) +
+  theme_minimal()
+
+```
+
+Average wind speed is highest in the middle altitude group at about 20.5 m/s, compared to 9.5 m/s at low altitudes and 13 m/s at high altitudes. The box plot also shows that the middle group has the highest median wind speed and a wider spread of measurements than the low group.
+
+### Wind Speed by Altitude Group (Box Plot)
+
+```{r}
+
+# Wind speed dist across alt
+ggplot(
+  subset(data, !is.na(AltitudeGroup)),
+  aes(x = AltitudeGroup, y = Wspd)
+) +
+  geom_boxplot(
+    fill = "lightblue",  # Color 1
+    color = "black",     # Color 2
+    na.rm = TRUE        # Ignore missing
+  ) +
+  labs(
+    title = "Wind Speed Distribution by Altitude Group",
+    x = "Altitude Group",
+    y = "Wind Speed (m/s)"
+  ) +
+  theme_minimal()
+
+```
+
+The box plot shows that wind speeds are highest in the middle altitude group, with a median around 20 m/s. The low altitude group has the lowest median around 9 m/s, while the high altitude group has a median around 13 m/s. The middle group also has a wider range of wind speeds compared to the low group, showing that wind speed varies more at middle altitudes.
+
+### Temperature vs. Altitude Colored by Wind Speed
+
+```{r}
+
+ggplot(data, aes(x = GeoPoAlt, y = Temperature, color = Wspd)) +
+  geom_point(
+    size = 1.5,            # Point size
+    na.rm = TRUE           # Ignore missing values
+  ) +
+  scale_color_gradient(
+    low = "lightblue",     # Lower wind speeds
+    high = "darkblue",     # Higher wind speeds
+    na.value = "grey80",
+    name = "Wind Speed (m/s)"
+  ) +
+  labs(
+    title = "Temperature vs. Altitude by Wind Speed",
+    x = "Geopotential Altitude (m)",
+    y = "Temperature (°C)"
+  ) +
+  theme_minimal()
+
+```
+
+Temperature decreases as altitude increases, while wind speed is shown using color. Stronger winds occur around 6,000–7,000 meters, where temperatures are below 0°C. The graph shows that the strongest winds occur at middle altitudes, even though temperature continues to decrease at higher altitudes.
+
+---
+
+### Additional Variable Summaries
+
+```{r}
+
+# Summarize the remaining numerical variables
+other_variables <- data[, !names(data) %in%
+  c("Pressure", "Temperature", "Wspd", "GeoPoAlt")]
+
+summary(other_variables)
+
+```
+
+Measurements range from -1 to 899.5 seconds, all recorded during hour 21. Dewpoint temperatures range from -50.20°C to 24.88°C, while relative humidity averages 76.86%.
+
+Uwind values are all negative, while Vwind includes both positive and negative values. Wind direction ranges from 48 to 107 degrees, and negative vertical velocities are consistent with the dropsonde descending.
+
+Longitude and latitude show that measurements were collected within a small geographic area. GPS altitude ranges from -12.29 to 12,252.50 meters, with the negative value possibly needing further investigation. Missing data may also limit comparisons.
+
+
+# Results
+
+## Analysis Methods
+
+I usd scatter plots to examine how atmospheric pressure, temperature, and wind speed change with altitude, and also grouped the altitude measurements into low, middle, and high categories to compare wind speeds using averages and box plots. These helped identify patterns and differences between the altitude groups.
+
+## Atmospheric Pressure and Altitude
+
+The scatter plot shows that atmospheric pressure decreases as altitude increases. Pressure starts around 1,000 mb near the surface and drops to about 200 mb at the highest altitudes. The relationship is curved rather than linear, showing that pressure does not decrease at the same rate throughout the descent.
+
+The results answer question 1 by showing a clear relationship between atmospheric pressure and altitude.
+
+## Temperature and Altitude
+
+The scatter plot shows that temperature decreases as altitude increases with temperatures around 27°C near the surface that drop to about -50°C at the highest altitudes, showing difference of approximately 77°C between the lowest and highest measurements.
+
+These results answer the question 2 by showing that temperatures become more cold at higher altitudes during the dropsonde descent.
+
+## Wind Speed and Altitude
+
+Wind speed changes at different altitudes rather than following a consistent increase or decrease. The scatter plot shows that wind speeds reach nearly 25 m/s around 6,500 meters.
+
+The bar chart shows that the middle altitude group has the highest average wind speed at approximately 20.5 m/s, compared to 9.5 m/s for the low group and 13 m/s for the high group. The box plot also shows that the middle group has the highest median wind speed at around 20 m/s, along with a wider spread of measurements than the low group.
+
+The results answer question 3 by showing that the strongest winds were found at middle altitudes around 6,500 meters.
+
+# Conclusions
+
+The analysis shows that atmospheric pressure and temperature both decrease as altitude increases, while wind speed changes more throughout the descent. One thing that surprised me was how much stronger the winds were at middle altitudes compared to lower and higher altitudes. The graphs helped me identify these patterns and better understand the relationships between the measurements.
+
+One limitation of this dataset is the amount of missing data. Some variables are missing more than half of their observations, which may affect the results. The analysis also uses measurements from a single dropsonde, so the findings may not represent atmospheric conditions in other locations or at different times.
+
+In the future, I would like to investigate why wind speeds are strongest around 6,500 meters and whether this is related to temperature or pressure. I could also compare measurements from other dropsondes to see if similar patterns occur.
+
+# References
+
+NASA Earthdata. (2010). GRIP DC-8 Dropsonde V3. NASA Global Hydrometeorology Resource Center Distributed Active Archive Center (GHRC DAAC).
+
+https://search.earthdata.nasa.gov/search/granules?p=C1979835081-GHRC_DAAC
+
+Freeman, M., & Ross, J. (2018). Programming skills for data science: Start writing code to wrangle, analyze, and visualize data with R. Addison-Wesley Professional.
+
+https://www.informit.com/store/programming-skills-for-data-science-start-writing-code-9780135133101
+
+Wickham, H. (n.d.). Tidyverse style guide: Files. Tidyverse.
+
+https://style.tidyverse.org/files.html
+
+Xie, Y., Dervieux, C., & Riederer, E. (2020). R Markdown cookbook. Chapman and Hall/CRC.
+
+https://bookdown.org/yihui/rmarkdown-cookbook/
